@@ -12,24 +12,10 @@
 			"webhookToken": "<change_this>"
 		},
 		{
-			"name": "custom_scripts",
-			"remote": "https://github.com/YOUR_GITHUB_USERNAME/YOUR_CUSTOM_SCRIPTS_REPO",
-			"path": "./sync/custom_scripts/",
-			"webhookPort": 34344,
-			"webhookToken": "<change_this>"
-		},
-		{
 			"name": "databases",
 			"remote": "https://github.com/ProjectIgnis/BabelCDB",
 			"path": "./sync/databases/",
 			"webhookPort": 62672,
-			"webhookToken": "<change_this>"
-		},
-		{
-			"name": "custom_databases",
-			"remote": "https://github.com/YOUR_GITHUB_USERNAME/YOUR_CUSTOM_DATABASE_REPO",
-			"path": "./sync/custom_databases/",
-			"webhookPort": 62673,
 			"webhookToken": "<change_this>"
 		},
 		{
@@ -44,6 +30,13 @@
 			"remote": "https://github.com/ProjectIgnis/bin",
 			"path": "./sync/bin/",
 			"webhookPort": 43632,
+			"webhookToken": "<change_this>"
+		},
+		{
+			"name": "realm_of_kings",
+			"remote": "https://github.com/Hacato/Realm-Of-Kings.git",
+			"path": "./sync/realm_of_kings/",
+			"webhookPort": 34344,
 			"webhookToken": "<change_this>"
 		}
 	],
@@ -65,7 +58,7 @@
 	"dataProvider": {
 		"observedRepos": [
 			"databases",
-			"custom_databases"
+			"realm_of_kings"
 		],
 		"fileRegex": ".*\\.cdb"
 	},
@@ -142,7 +135,7 @@
 	"scriptProvider": {
 		"observedRepos": [
 			"scripts",
-			"custom_scripts"
+			"realm_of_kings"
 		],
 		"fileRegex": ".*\\.lua"
 	}
