@@ -42,7 +42,8 @@
 	],
 	"banlistProvider": {
 		"observedRepos": [
-			"banlists"
+			"banlists",
+			"realm_of_kings"
 		],
 		"fileRegex": ".*\\.lflist\\.conf"
 	},
