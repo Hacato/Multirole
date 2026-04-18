@@ -12,10 +12,24 @@
 			"webhookToken": "<change_this>"
 		},
 		{
+			"name": "custom_scripts",
+			"remote": "https://github.com/YOUR_GITHUB_USERNAME/YOUR_CUSTOM_SCRIPTS_REPO",
+			"path": "./sync/custom_scripts/",
+			"webhookPort": 34344,
+			"webhookToken": "<change_this>"
+		},
+		{
 			"name": "databases",
 			"remote": "https://github.com/ProjectIgnis/BabelCDB",
 			"path": "./sync/databases/",
 			"webhookPort": 62672,
+			"webhookToken": "<change_this>"
+		},
+		{
+			"name": "custom_databases",
+			"remote": "https://github.com/YOUR_GITHUB_USERNAME/YOUR_CUSTOM_DATABASE_REPO",
+			"path": "./sync/custom_databases/",
+			"webhookPort": 62673,
 			"webhookToken": "<change_this>"
 		},
 		{
@@ -50,7 +64,8 @@
 	},
 	"dataProvider": {
 		"observedRepos": [
-			"databases"
+			"databases",
+			"custom_databases"
 		],
 		"fileRegex": ".*\\.cdb"
 	},
@@ -126,7 +141,8 @@
 	},
 	"scriptProvider": {
 		"observedRepos": [
-			"scripts"
+			"scripts",
+			"custom_scripts"
 		],
 		"fileRegex": ".*\\.lua"
 	}
