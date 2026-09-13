@@ -342,7 +342,7 @@ std::unique_ptr<YGOPro::STOCMsg> Context::CheckDeck(const YGOPro::Deck& deck) co
 		return aliased[code];
 	};
 	// Custom predicates...
-	//	true if card scope is unnofficial and not allowed.
+	//	true if card scope is unofficial and not allowed.
 	auto CheckUnofficial = [](uint32_t scope, uint8_t allowed) constexpr -> bool
 	{
 		switch(allowed)
@@ -353,6 +353,18 @@ std::unique_ptr<YGOPro::STOCMsg> Context::CheckDeck(const YGOPro::Deck& deck) co
 			return scope > SCOPE_OCG_TCG;
 		case ALLOWED_CARDS_WITH_PRERELEASE:
 			return (scope & (~SCOPE_OFFICIAL)) != 0U;
+		case ALLOWED_CARDS_CUSTOMS:
+		{
+			// Realm of Kings Customs:
+			// Allow normal OCG/TCG cards and cards marked with SCOPE_CUSTOM.
+			// Reject cards that belong only to Anime, Illegal, Video Game,
+			// Rush, or other unrelated scopes.
+			constexpr uint32_t CUSTOMS_SCOPE =
+				SCOPE_OCG |
+				SCOPE_TCG |
+				SCOPE_CUSTOM;
+			return (scope & CUSTOMS_SCOPE) == 0U;
+		}
 		default:
 			return false;
 		}
