@@ -356,14 +356,14 @@ std::unique_ptr<YGOPro::STOCMsg> Context::CheckDeck(const YGOPro::Deck& deck) co
 		case ALLOWED_CARDS_CUSTOMS:
 		{
 			// Realm of Kings Customs:
-			// Allow normal OCG/TCG cards and cards marked with SCOPE_CUSTOM.
-			// Reject cards that belong only to Anime, Illegal, Video Game,
-			// Rush, or other unrelated scopes.
-			constexpr uint32_t CUSTOMS_SCOPE =
+			// Strict whitelist: only OCG, TCG and Custom scope bits are allowed.
+			// Any Anime, Illegal, Video Game, Speed, Prerelease, Rush,
+			// Legend, Hidden, or unknown scope bit makes the card unofficial.
+			constexpr uint32_t CUSTOMS_ALLOWED =
 				SCOPE_OCG |
 				SCOPE_TCG |
 				SCOPE_CUSTOM;
-			return (scope & CUSTOMS_SCOPE) == 0U;
+			return scope == 0U || (scope & ~CUSTOMS_ALLOWED) != 0U;
 		}
 		default:
 			return false;
