@@ -1,5 +1,14 @@
 #include "LobbyListing.hpp"
 
+#include <array>
+#include <chrono>
+#include <fstream>
+#include <iterator>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <string_view>
+
 #include <boost/asio/write.hpp>
 #include <boost/json.hpp>
 #include <fmt/format.h> // fmt::to_string
@@ -10,16 +19,141 @@
 namespace Ignis::Multirole::Endpoint
 {
 
+namespace
+{
+
+constexpr std::string_view UPDATE_PATH = "/client-update";
+constexpr std::string_view REALM_USER_AGENT_MARKER = "-RealmOfKings-";
+constexpr const char* REALM_CLIENT_COMMIT_PATH = "./sync/realm_client/commit";
+constexpr const char* REALM_CLIENT_UPDATE_JSON_PATH = "./sync/realm_client/update.json";
+
+std::string TrimWhitespace(std::string value)
+{
+	const auto first = value.find_first_not_of(" \t\r\n");
+	if(first == std::string::npos)
+		return {};
+	const auto last = value.find_last_not_of(" \t\r\n");
+	return value.substr(first, last - first + 1U);
+}
+
+std::string ReadTextFile(const char* path)
+{
+	std::ifstream file(path, std::ios::binary);
+	if(!file)
+		return {};
+	return std::string(
+		std::istreambuf_iterator<char>(file),
+		std::istreambuf_iterator<char>());
+}
+
+std::string MakeJsonResponse(std::string_view body, std::string_view status = "200 OK")
+{
+	return fmt::format(
+		"HTTP/1.0 {}\r\n"
+		"Content-Length: {}\r\n"
+		"Content-Type: application/json\r\n"
+		"Cache-Control: no-store\r\n"
+		"Connection: close\r\n\r\n"
+		"{}",
+		status,
+		body.size(),
+		body);
+}
+
+std::string_view GetRequestPath(std::string_view request)
+{
+	const auto lineEnd = request.find("\r\n");
+	const auto firstLine = request.substr(0, lineEnd);
+	const auto firstSpace = firstLine.find(' ');
+	if(firstSpace == std::string_view::npos)
+		return {};
+	const auto secondSpace = firstLine.find(' ', firstSpace + 1U);
+	if(secondSpace == std::string_view::npos)
+		return {};
+	return firstLine.substr(firstSpace + 1U, secondSpace - firstSpace - 1U);
+}
+
+std::string_view GetHeader(std::string_view request, std::string_view headerName)
+{
+	std::size_t pos = 0;
+	while(pos < request.size())
+	{
+		const auto lineEnd = request.find("\r\n", pos);
+		const auto end = lineEnd == std::string_view::npos ? request.size() : lineEnd;
+		const auto line = request.substr(pos, end - pos);
+
+		if(line.size() > headerName.size() &&
+		   line.substr(0, headerName.size()) == headerName &&
+		   line[headerName.size()] == ':')
+		{
+			auto value = line.substr(headerName.size() + 1U);
+			while(!value.empty() && (value.front() == ' ' || value.front() == '\t'))
+				value.remove_prefix(1U);
+			return value;
+		}
+
+		if(lineEnd == std::string_view::npos)
+			break;
+		pos = lineEnd + 2U;
+	}
+	return {};
+}
+
+std::string_view GetRealmBuildCommit(std::string_view userAgent)
+{
+	const auto marker = userAgent.find(REALM_USER_AGENT_MARKER);
+	if(marker == std::string_view::npos)
+		return {};
+
+	auto commit = userAgent.substr(marker + REALM_USER_AGENT_MARKER.size());
+	const auto end = commit.find_first_of(" \t\r\n");
+	if(end != std::string_view::npos)
+		commit = commit.substr(0, end);
+	return commit;
+}
+
+std::string MakeUpdateResponse(std::string_view request)
+{
+	const auto currentCommit = TrimWhitespace(ReadTextFile(REALM_CLIENT_COMMIT_PATH));
+	const auto userAgent = GetHeader(request, "User-Agent");
+	const auto clientCommit = GetRealmBuildCommit(userAgent);
+
+	if(currentCommit.empty())
+	{
+		// Fail closed: if Multirole cannot determine the current build,
+		// do not repeatedly offer an update it cannot validate.
+		return MakeJsonResponse("[]");
+	}
+
+	if(!clientCommit.empty() && clientCommit == currentCommit)
+		return MakeJsonResponse("[]");
+
+	const auto updateJson = ReadTextFile(REALM_CLIENT_UPDATE_JSON_PATH);
+	if(updateJson.empty())
+		return MakeJsonResponse("[]");
+
+	// Validate the generated file before sending it to EDOPro.
+	boost::system::error_code ec;
+	const auto parsed = boost::json::parse(updateJson, ec);
+	if(ec || !parsed.is_array())
+		return MakeJsonResponse("[]");
+
+	return MakeJsonResponse(updateJson);
+}
+
+} // namespace
+
 class LobbyListing::Connection final : public std::enable_shared_from_this<Connection>
 {
 public:
 	Connection(
 		boost::asio::ip::tcp::socket socket,
-		std::shared_ptr<const std::string> data) noexcept
+		std::shared_ptr<const std::string> roomListData) noexcept
 		:
 		socket(std::move(socket)),
-		outgoing(std::move(data)),
+		roomListData(std::move(roomListData)),
 		incoming(),
+		request(),
 		writeCalled(false)
 	{}
 
@@ -27,29 +161,59 @@ public:
 	{
 		auto self(shared_from_this());
 		socket.async_read_some(boost::asio::buffer(incoming),
-		[this, self](boost::system::error_code ec, std::size_t /*unused*/)
+		[this, self](boost::system::error_code ec, std::size_t bytesRead)
 		{
 			if(ec)
 				return;
-			if(!writeCalled)
+
+			request.append(incoming.data(), bytesRead);
+
+			// Wait until the complete HTTP header is available.
+			if(request.find("\r\n\r\n") == std::string::npos)
 			{
-				writeCalled = true;
-				DoWrite();
+				// Protect this tiny endpoint from unbounded request headers.
+				if(request.size() > 16384U)
+				{
+					writeCalled = true;
+					DoWrite(std::make_shared<const std::string>(
+						MakeJsonResponse("[]", "400 Bad Request")));
+					return;
+				}
+				DoRead();
+				return;
 			}
-			DoRead();
+
+			if(writeCalled)
+				return;
+
+			writeCalled = true;
+			const auto path = GetRequestPath(request);
+
+			if(path == UPDATE_PATH)
+			{
+				DoWrite(std::make_shared<const std::string>(
+					MakeUpdateResponse(request)));
+				return;
+			}
+
+			// Preserve the original room-list behavior for every other path,
+			// including the existing "/" request used by EDOPro.
+			DoWrite(roomListData);
 		});
 	}
+
 private:
 	boost::asio::ip::tcp::socket socket;
-	std::shared_ptr<const std::string> outgoing;
-	std::array<char, 256U> incoming;
+	std::shared_ptr<const std::string> roomListData;
+	std::array<char, 1024U> incoming;
+	std::string request;
 	bool writeCalled;
 
-	void DoWrite() noexcept
+	void DoWrite(std::shared_ptr<const std::string> outgoing) noexcept
 	{
 		auto self(shared_from_this());
 		boost::asio::async_write(socket, boost::asio::buffer(*outgoing),
-		[this, self](boost::system::error_code ec, std::size_t /*unused*/)
+		[this, self, outgoing](boost::system::error_code ec, std::size_t /*unused*/)
 		{
 			if(!ec)
 				socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
