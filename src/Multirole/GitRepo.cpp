@@ -1,6 +1,7 @@
 #include "GitRepo.hpp"
 
 #include <filesystem>
+#include <string>
 
 #include <boost/json/value.hpp>
 
@@ -35,6 +36,12 @@ GitRepo::GitRepo(Service::LogHandler& lh, boost::asio::io_context& ioCtx, const 
 	token(opts.at("webhookToken").as_string().data()),
 	remote(opts.at("remote").as_string().data()),
 	path(opts.at("path").as_string().data()),
+	branch([&opts]()
+	{
+		if(const auto* const value = opts.as_object().if_contains("branch"); value && value->is_string())
+			return std::string(value->as_string().data());
+		return std::string{};
+	}()),
 	repo(nullptr)
 {
 	if(const auto* const cred = opts.as_object().if_contains("credentials"); cred)
@@ -116,43 +123,69 @@ bool GitRepo::CheckIfRepoExists() const
 
 void GitRepo::Clone()
 {
-	// git clone <url>
+	// git clone <url> [specific branch when configured]
 	git_clone_options cloneOpts = GIT_CLONE_OPTIONS_INIT;
+	if(!branch.empty())
+		cloneOpts.checkout_branch = branch.c_str();
+
 	if(credPtr)
 	{
 		cloneOpts.fetch_opts.callbacks.credentials = &CredCb;
 		cloneOpts.fetch_opts.callbacks.payload = credPtr.get();
 	}
+
 	Git::Check(git_clone(&repo, remote.c_str(), path.string().data(), &cloneOpts));
 	LOG_INFO(I18N::GIT_REPO_CLONING_COMPLETED);
 }
 
 void GitRepo::Fetch()
 {
-	// git fetch
 	git_fetch_options fetchOpts = GIT_FETCH_OPTIONS_INIT;
 	if(credPtr)
 	{
 		fetchOpts.callbacks.credentials = &CredCb;
 		fetchOpts.callbacks.payload = credPtr.get();
 	}
-	auto remote = Git::MakeUnique(git_remote_lookup, repo, "origin");
-	Git::Check(git_remote_fetch(remote.get(), nullptr, &fetchOpts, nullptr));
+
+	auto remoteHandle = Git::MakeUnique(git_remote_lookup, repo, "origin");
+
+	if(branch.empty())
+	{
+		// Preserve the original behavior for repositories that do not specify a branch.
+		Git::Check(git_remote_fetch(remoteHandle.get(), nullptr, &fetchOpts, nullptr));
+		return;
+	}
+
+	// Fetch only the configured branch and update its origin/<branch> tracking ref.
+	const std::string refspec =
+		"+refs/heads/" + branch + ":refs/remotes/origin/" + branch;
+	char* refspecPtr = const_cast<char*>(refspec.c_str());
+	git_strarray refspecs{ &refspecPtr, 1U };
+
+	Git::Check(git_remote_fetch(remoteHandle.get(), &refspecs, &fetchOpts, nullptr));
 }
 
 void GitRepo::ResetToFetchHead()
 {
-	// git reset --hard FETCH_HEAD
-	git_oid oid;
-	Git::Check(git_reference_name_to_id(&oid, repo, "FETCH_HEAD"));
-	auto commit = Git::MakeUnique(git_commit_lookup, repo, &oid);
-	Git::Check(git_reset(repo, reinterpret_cast<git_object*>(commit.get()),
-	                     GIT_RESET_HARD, nullptr));
+	if(branch.empty())
+	{
+		// Original behavior.
+		git_oid oid;
+		Git::Check(git_reference_name_to_id(&oid, repo, "FETCH_HEAD"));
+		auto commit = Git::MakeUnique(git_commit_lookup, repo, &oid);
+		Git::Check(git_reset(repo, reinterpret_cast<git_object*>(commit.get()),
+		                     GIT_RESET_HARD, nullptr));
+		return;
+	}
+
+	// Reset the working tree to the explicitly configured remote branch.
+	const std::string refName = "refs/remotes/origin/" + branch;
+	auto target = Git::MakeUnique(git_revparse_single, repo, refName.c_str());
+	Git::Check(git_reset(repo, target.get(), GIT_RESET_HARD, nullptr));
 }
 
 GitDiff GitRepo::GetFilesDiff() const
 {
-	// git diff ..FETCH_HEAD
 	auto FileCb = [](const git_diff_delta* delta, float /*unused*/, void* payload) -> int
 	{
 		auto& diff = *static_cast<GitDiff*>(payload);
@@ -171,11 +204,26 @@ GitDiff GitRepo::GetFilesDiff() const
 		}
 		return 0;
 	};
+
 	auto obj1 = Git::MakeUnique(git_revparse_single, repo, "HEAD");
-	auto obj2 = Git::MakeUnique(git_revparse_single, repo, "FETCH_HEAD");
+
+	if(branch.empty())
+	{
+		auto obj2 = Git::MakeUnique(git_revparse_single, repo, "FETCH_HEAD");
+		auto t1 = Git::Peel<git_tree>(std::move(obj1));
+		auto t2 = Git::Peel<git_tree>(std::move(obj2));
+		auto obj3 = Git::MakeUnique(git_diff_tree_to_tree, repo, t1.get(), t2.get(), nullptr);
+		GitDiff diff;
+		Git::Check(git_diff_foreach(obj3.get(), FileCb, nullptr, nullptr, nullptr, &diff));
+		return diff;
+	}
+
+	const std::string refName = "refs/remotes/origin/" + branch;
+	auto obj2 = Git::MakeUnique(git_revparse_single, repo, refName.c_str());
 	auto t1 = Git::Peel<git_tree>(std::move(obj1));
 	auto t2 = Git::Peel<git_tree>(std::move(obj2));
 	auto obj3 = Git::MakeUnique(git_diff_tree_to_tree, repo, t1.get(), t2.get(), nullptr);
+
 	GitDiff diff;
 	Git::Check(git_diff_foreach(obj3.get(), FileCb, nullptr, nullptr, nullptr, &diff));
 	return diff;
