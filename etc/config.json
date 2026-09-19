@@ -38,6 +38,14 @@
 			"path": "./sync/realm_of_kings/",
 			"webhookPort": 34344,
 			"webhookToken": "<change_this>"
+		},
+		{
+			"name": "realm_client",
+			"remote": "https://github.com/Hacato/Realm-Of-Kings-Client.git",
+			"branch": "travis-windows",
+			"path": "./sync/realm_client/",
+			"webhookPort": 34345,
+			"webhookToken": "<change_this>"
 		}
 	],
 	"banlistProvider": {
