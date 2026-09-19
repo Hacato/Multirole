@@ -1,6 +1,11 @@
 #ifndef GITREPO_HPP
 #define GITREPO_HPP
+
+#include <filesystem>
+#include <memory>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include <boost/json/fwd.hpp>
@@ -29,11 +34,13 @@ public:
 	GitRepo& operator=(GitRepo&&) = delete;
 
 	void AddObserver(IGitRepoObserver& obs);
+
 private:
 	Service::LogHandler& lh;
 	const std::string token;
 	const std::string remote;
 	const std::filesystem::path path;
+	const std::string branch;
 	std::unique_ptr<Credentials> credPtr;
 	git_repository* repo;
 	std::vector<IGitRepoObserver*> observers;
