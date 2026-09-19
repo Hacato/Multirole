@@ -189,7 +189,10 @@ public:
 			writeCalled = true;
 			const auto path = GetRequestPath(request);
 
-			if(path == UPDATE_PATH)
+			// Railway/proxies may forward the request target in a form other
+			// than the exact origin-form "/client-update" string. Recognize
+			// the updater route anywhere in the parsed request target.
+			if(path.find(UPDATE_PATH) != std::string_view::npos)
 			{
 				DoWrite(std::make_shared<const std::string>(
 					MakeUpdateResponse(request)));
