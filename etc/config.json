@@ -45,7 +45,7 @@
 			"branch": "travis-windows",
 			"path": "./sync/realm_client/",
 			"webhookPort": 34345,
-			"webhookToken": "<change_this>"
+			"webhookToken": "2e629afd86cd4e17a2e7f9cbfc3639df"
 		}
 	],
 	"banlistProvider": {
