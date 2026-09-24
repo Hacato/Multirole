@@ -46,6 +46,12 @@
 			"path": "./sync/realm_client/",
 			"webhookPort": 34345,
 			"webhookToken": "2e629afd86cd4e17a2e7f9cbfc3639df"
+		},
+		{
+			"name": "realm_android",
+			"remote": "https://github.com/Hacato/Realm-Of-Kings-Client.git",
+			"branch": "travis-android",
+			"path": "./sync/realm_android/"
 		}
 	],
 	"banlistProvider": {
@@ -94,14 +100,6 @@
 				"properties": {}
 			},
 			"logHandler": {
-				"type": "stdout",
-				"properties": {}
-			},
-			"replayManager": {
-				"type": "stdout",
-				"properties": {}
-			},
-			"scriptProvider": {
 				"type": "stdout",
 				"properties": {}
 			},
