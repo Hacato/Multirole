@@ -34,8 +34,9 @@ launch_multirole() {
 
 launch_multirole_if_not_running() {
 	kill -s 0 $multirole_pid 2>/dev/null && return
-	ts_echo "Multirole exited without my signaling! Relaunching"
-	launch_multirole
+	trap - CHLD
+	ts_echo "Multirole exited unexpectedly; stopping launcher so Railway can report the failure"
+	exit 1
 }
 
 term_and_launch_multirole() {
