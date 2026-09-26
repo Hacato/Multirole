@@ -97,6 +97,14 @@
 				"type": "stdout",
 				"properties": {}
 			},
+			"replayManager": {
+				"type": "stdout",
+				"properties": {}
+			},
+			"scriptProvider": {
+				"type": "stdout",
+				"properties": {}
+			},
 			"other": {
 				"type": "stdout",
 				"properties": {}
